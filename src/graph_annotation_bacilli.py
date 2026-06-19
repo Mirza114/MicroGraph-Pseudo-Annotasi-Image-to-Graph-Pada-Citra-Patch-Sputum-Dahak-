@@ -9,18 +9,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-
-#Path
-
-INPUT_DIR = Path(r"D:\S3\Hasil Perbandingan AMPFIG\Data10")
-OUTPUT_DIR = Path(r"D:\S3\Hasil Perbandingan AMPFIG\Hasil")
-
 RESIZE_TO = 28
 CONNECTIVITY = 8
 MIN_AREA = 3
 MAX_GAP = 3.0
 
-# Utilitas
 
 def read_image(path: Path, resize_to: int = 28) -> np.ndarray:
     img_bgr = cv2.imread(str(path))
@@ -63,12 +56,9 @@ def otsu_threshold_float(score: np.ndarray) -> float:
 
     return threshold_value / 255.0
 
-# Bacilli Color Score 
-
 def bacilli_color_score(img_rgb: np.ndarray) -> np.ndarray:
     img_float = img_rgb.astype(np.float32) / 255.0
 
-    # Kanal RGB
     R = img_float[:, :, 0]
     G = img_float[:, :, 1]
     B = img_float[:, :, 2]
@@ -76,7 +66,6 @@ def bacilli_color_score(img_rgb: np.ndarray) -> np.ndarray:
     red_excess = np.clip(R - 0.5 * (G + B), 0, 1)
     purple_excess = np.clip((R + B) / 2.0 - G, 0, 1)
 
-    # HSV
     hsv = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
     H = hsv[:, :, 0].astype(np.float32)
     S = hsv[:, :, 1].astype(np.float32) / 255.0
@@ -84,14 +73,11 @@ def bacilli_color_score(img_rgb: np.ndarray) -> np.ndarray:
 
     darkness = 1.0 - V
 
-    # Lab
     lab = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LAB)
     A = lab[:, :, 1].astype(np.float32)
 
-    # A lebih dari 128 cenderung merah
     a_red = np.clip((A - 128.0) / 127.0, 0, 1)
 
-    # Hue merah dan ungu
     red_hue = ((H <= 12) | (H >= 165)).astype(np.float32)
     purple_hue = ((H >= 125) & (H <= 165)).astype(np.float32)
     hue_score = np.maximum(red_hue, purple_hue) * S
@@ -126,7 +112,6 @@ def proposed_mask_from_score(
 
     kernel = np.ones((3, 3), np.uint8)
 
-    # Closing untuk menyambung bagian kecil yang putus
     if close_iter > 0:
         mask = cv2.morphologyEx(
             mask,
@@ -135,7 +120,6 @@ def proposed_mask_from_score(
             iterations=close_iter
         )
 
-    # Opening default 0 supaya bakteri tipis tidak hilang
     if open_iter > 0:
         mask = cv2.morphologyEx(
             mask,
@@ -148,8 +132,6 @@ def proposed_mask_from_score(
 
     return mask, score
 
-
-# Aljabar Boolean RGB
 
 def channel_threshold(channel: np.ndarray) -> np.ndarray:
     channel = channel.astype(np.uint8)
@@ -206,9 +188,6 @@ def filter_small_components(mask: np.ndarray, min_area: int = 3) -> np.ndarray:
             output[labels == label_id] = 1
 
     return output
-
-
-# Endpoint bridging
 
 def get_neighbors(
     row: int,
@@ -402,9 +381,6 @@ def endpoint_bridging(
 
     return output.astype(np.uint8)
 
-
-# Mask menjadi graph annotation
-
 def mask_to_graph(mask: np.ndarray, connectivity: int = 8) -> dict:
 
     mask = (mask > 0).astype(np.uint8)
@@ -530,9 +506,6 @@ def save_adjacency_matrix(
 
     return True
 
-
-# Visualisasi
-
 def save_mask_png(mask: np.ndarray, output_path: Path):
     cv2.imwrite(
         str(output_path),
@@ -592,8 +565,6 @@ def save_visualization(
     plt.close(fig)
 
 
-#Proses Satu Folder
-
 def process_image(
     image_path: Path,
     output_dir: Path,
@@ -612,7 +583,6 @@ def process_image(
         resize_to=resize_to
     )
 
-    # Folder output
     boolean_dir = output_dir / "boolean_baseline"
     mask_dir = output_dir / "mask"
     graph_dir = output_dir / "graph_json"
@@ -624,8 +594,7 @@ def process_image(
     graph_dir.mkdir(exist_ok=True)
     adjacency_dir.mkdir(exist_ok=True)
     visualization_dir.mkdir(exist_ok=True)
-
-    # Baseline Boolean
+    
     baseline_masks = boolean_masks(
         img_rgb,
         min_area=min_area
@@ -637,20 +606,17 @@ def process_image(
             boolean_dir / f"{image_name}_{method_name}.png"
         )
 
-    # Proposed method
     mask_initial, score = proposed_mask_from_score(
         img_rgb,
         min_area=min_area
     )
 
-    # Endpoint bridging
     mask_bridged = endpoint_bridging(
         mask_initial,
         score,
         max_gap=max_gap
     )
 
-    # Filter lagi setelah bridging
     mask_final = filter_small_components(
         mask_bridged,
         min_area=min_area
@@ -666,13 +632,11 @@ def process_image(
     graph["min_area"] = int(min_area)
     graph["max_gap"] = float(max_gap)
 
-    # Simpan mask final
     save_mask_png(
         mask_final,
         mask_dir / f"{image_name}_mask.png"
     )
 
-    # Simpan graph JSON
     with open(
         graph_dir / f"{image_name}_graph.json",
         "w",
@@ -680,7 +644,6 @@ def process_image(
     ) as file:
         json.dump(graph, file, indent=2)
 
-    # Simpan adjacency matrix
     matrix_saved = save_adjacency_matrix(
         graph,
         adjacency_dir / f"{image_name}_adjacency.npy"
@@ -696,7 +659,6 @@ def process_image(
             delimiter=","
         )
 
-    # Simpan visualisasi
     save_visualization(
         img_rgb,
         score,
@@ -714,8 +676,6 @@ def process_image(
 
     return result
 
-
-# Proses Satu Folder
 def process_folder(
     input_dir: Path,
     output_dir: Path,
@@ -776,7 +736,6 @@ def process_folder(
         except Exception as error:
             print(f"  Gagal memproses {image_path.name}: {error}")
 
-    # Simpan summary CSV
     summary_path = output_dir / "summary.csv"
 
     with open(summary_path, "w", encoding="utf-8") as file:
@@ -794,7 +753,6 @@ def process_folder(
     print(f"Output tersimpan di: {output_dir}")
     print(f"Summary tersimpan di: {summary_path}")
 
-# Main
 def main():
     if not INPUT_DIR.exists():
         raise FileNotFoundError(
